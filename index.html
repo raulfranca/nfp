@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner de Notas Fiscais (NFP) v11</title>
+    <!-- Carrega o TailwindCSS para um design limpo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carrega a biblioteca de leitura de QR Code -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        /* Ajuste para o leitor de QR code se adaptar ao contêiner */
+        #reader {
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer; /* Indica que é clicável para focar */
+            background: #2d3748; /* Fundo escuro para a área da câmera */
+        }
+        /* Caixa de mira para facilitar o foco */
+        #reader video {
+            width: 100% !important;
+            height: auto !important;
+            /* Garante que o vídeo não fique distorcido */
+            object-fit: cover; 
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen font-sans">
+
+    <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 m-4">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">
+            Scanner Rápido NFP (v11)
+        </h1>
+        <p class="text-center text-gray-600 mb-4">
+            Aponte para o QR Code (NFC-e) ou Cód. Barras (SAT).
+            <br>
+            <span class="font-semibold">Toque na imagem para focar.</span>
+        </p>
+
+        <!-- Contêiner onde a câmera será exibida -->
+        <div id="reader" class="shadow-inner" style="min-height: 250px;"></div>
+
+        <!-- Botões de Controle -->
+        <div class="grid grid-cols-1 gap-4 mt-4">
+            <button id="startButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors duration-200">
+                Iniciar Scan
+            </button>
+            <button id="stopButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors duration-200 hidden">
+                Parar Scan
+            </button>
+        </div>
+
+        <!-- Status da Leitura -->
+        <div class="mt-4 text-center">
+            <span class="text-lg font-semibold text-blue-700" id="status">Pronto para escanear.</span>
+            <p class="text-sm text-gray-500">Total de chaves lidas: <span id="scanCount" class="font-bold">0</span></p>
+        </div>
+
+        <!-- Área de Resultados -->
+        <div class="mt-4">
+            <label for="results" class="block text-sm font-medium text-gray-700 mb-1">Chaves de 44 dígitos:</label>
+            <textarea id="results" readonly
+                class="w-full h-40 p-3 border border-gray-300 rounded-md bg-gray-50 font-mono text-sm shadow-inner"
+                placeholder="As chaves escaneadas aparecerão aqui, uma por linha..."></textarea>
+        </div>
+
+        <!-- Botões de Ação para os Resultados -->
+        <div class="grid grid-cols-2 gap-4 mt-4">
+            <button id="copyButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors duration-200">
+                Copiar Lista
+            </button>
+            <button id="clearButton" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors duration-200">
+                Limpar Lista
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // === INÍCIO DA ALTERAÇÃO V11 ===
+        // 1. Espera o DOM carregar (mais rápido que 'window.onload')
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Elementos da UI
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const statusDiv = document.getElementById('status');
+            const resultsTextarea = document.getElementById('results');
+            const copyButton = document.getElementById('copyButton');
+            const clearButton = document.getElementById('clearButton');
+            const scanCountSpan = document.getElementById('scanCount');
+            const readerDiv = document.getElementById('reader');
+
+            // Conjunto para armazenar chaves únicas e evitar duplicatas
+            const scannedKeys = new Set();
+            let audioContext;
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn('Web Audio API não é suportada neste navegador.');
+            }
+            
+            function playBeep() {
+                if (!audioContext) return;
+                try {
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    oscillator.type = 'sine'; 
+                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); 
+                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime); 
+                    const now = audioContext.currentTime;
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.1);
+                } catch (e) {
+                    console.error('Erro ao tocar o beep:', e);
+                }
+            }
+
+            let html5QrCode;
+            try {
+                // 2. Inicializa a biblioteca (assumindo que já carregou)
+                html5QrCode = new Html5Qrcode("reader");
+            } catch (e) {
+                statusDiv.innerText = 'Erro ao carregar a biblioteca do scanner.';
+                console.error('Falha ao inicializar Html5Qrcode:', e);
+                startButton.disabled = true;
+                return;
+            }
+            
+            let activeTrack = null; 
+
+            // Lógica de Scan "Inteligente"
+            const onScanSuccess = (decodedText, decodedResult) => {
+                const match = decodedText.match(/(\d{44})/);
+                if (!match || !match[1]) {
+                    return; 
+                }
+                const accessKey = match[1];
+                if (!scannedKeys.has(accessKey)) {
+                    scannedKeys.add(accessKey);
+                    resultsTextarea.value += accessKey + '\n';
+                    resultsTextarea.scrollTop = resultsTextarea.scrollHeight;
+                    statusDiv.innerText = 'Lido com sucesso!';
+                    scanCountSpan.innerText = scannedKeys.size;
+                    playBeep();
+                    setTimeout(() => {
+                        if (html5QrCode.getState() === Html5Qrcode.STATE_SCANNING) {
+                            statusDiv.innerText = 'Aguardando...';
+                        }
+                    }, 500);
+                } else {
+                    statusDiv.innerText = 'Chave já lida.';
+                    setTimeout(() => {
+                        if (html5QrCode.getState() === Html5Qrcode.STATE_SCANNING) {
+                            statusDiv.innerText = 'Aguardando...';
+                        }
+                    }, 500);
+                }
+            };
+            
+            const onScanFailure = (error) => {
+                // Não faz nada, apenas continua tentando
+            };
+
+            // Função única para iniciar o scanner
+            function startScanner() {
+                statusDiv.innerText = 'Pedindo permissão da câmera...';
+                const formatsToSupport = [
+                    Html5QrcodeSupportedFormats.QR_CODE,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.EAN_13
+                ];
+                const cameraConfig = { 
+                    facingMode: "environment"
+                };
+                const scannerConfig = {
+                    fps: 10,
+                    formatsToSupport: formatsToSupport
+                };
+                
+                // O fluxo de 1 clique
+                try {
+                    html5QrCode.start(
+                        cameraConfig,
+                        scannerConfig,
+                        onScanSuccess,
+                        onScanFailure
+                    ).then(() => {
+                        statusDiv.innerText = 'Aguardando...';
+                        startButton.classList.add('hidden');
+                        stopButton.classList.remove('hidden');
+                        try {
+                            const videoElement = document.querySelector('#reader video');
+                            if (videoElement && videoElement.srcObject) {
+                                activeTrack = videoElement.srcObject.getVideoTracks()[0];
+                                const capabilities = activeTrack.getCapabilities();
+                                if (activeTrack && capabilities.focusMode) {
+                                    readerDiv.addEventListener('click', handleFocusTap);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Erro ao configurar o tap-to-focus:", e);
+                        }
+                    }).catch(err => {
+                        // 3. RELATÓRIO DE ERRO REAL
+                        // Se a permissão for negada ou o 'Preview' bloquear,
+                        // o erro real será mostrado aqui.
+                        statusDiv.innerText = `Erro: ${err}`;
+                        statusDiv.classList.remove('text-blue-700');
+                        statusDiv.classList.add('text-red-600', 'font-bold');
+                        console.error('Erro ao iniciar o scanner (Promise catch):', err);
+                    });
+                } catch (e) {
+                     statusDiv.innerText = 'Erro fatal ao iniciar.';
+                     console.error('Erro síncrono ao chamar html5QrCode.start():', e);
+                }
+            }
+            
+            startButton.addEventListener('click', startScanner);
+            
+            // Função para o "Tap-to-Focus"
+            function handleFocusTap() {
+                if (!activeTrack) return;
+                try {
+                    activeTrack.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] })
+                        .then(() => {
+                            statusDiv.innerText = 'Focando...';
+                            setTimeout(() => {
+                                activeTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                                if (html5QrCode.getState() === Html5Qrcode.STATE_SCANNING) {
+                                    statusDiv.innerText = 'Aguardando...';
+                                }
+                            }, 1500);
+                        })
+                        .catch(e => {
+                            activeTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                        });
+                } catch (e) {
+                    console.warn("Tap-to-focus não suportado:", e);
+                }
+            }
+
+            // Botão Parar Scan
+            stopButton.addEventListener('click', () => {
+                readerDiv.removeEventListener('click', handleFocusTap);
+                activeTrack = null; 
+                html5QrCode.stop().then(ignore => {
+                    statusDiv.innerText = 'Scanner parado.';
+                    stopButton.classList.add('hidden');
+                    startButton.classList.remove('hidden');
+                }).catch(err => {
+                    statusDiv.innerText = 'Erro ao parar scanner.';
+                    console.error('Erro ao parar o scanner:', err);
+                });
+            });
+
+            // Botão Copiar Lista
+            copyButton.addEventListener('click', () => {
+                if (resultsTextarea.value.trim() === "") {
+                    statusDiv.innerText = 'Nada para copiar.';
+                    return;
+                }
+                const tempTextArea = document.createElement('textarea');
+                tempTextArea.value = resultsTextarea.value;
+                document.body.appendChild(tempTextArea);
+                tempTextArea.select();
+                try {
+                    document.execCommand('copy');
+                    statusDiv.innerText = 'Lista copiada!';
+                } catch (err) {
+                    statusDiv.innerText = 'Erro ao copiar.';
+                    console.error('Falha ao copiar:', err);
+                }
+                document.body.removeChild(tempTextArea);
+            });
+
+            // Botão Limpar Lista
+            clearButton.addEventListener('click', () => {
+                scannedKeys.clear();
+                resultsTextarea.value = '';
+                scanCountSpan.innerText = '0';
+                statusDiv.innerText = 'Lista limpa. Pronto para escanear.';
+            });
+        
+        }); // <-- Fim do DOMContentLoaded
+        // === FIM DA ALTERAÇÃO V11 ===
+    </script>
+</body>
+</html>
