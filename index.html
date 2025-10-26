@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Notas Fiscais (NFP) v13</title>
+    <title>Scanner de Notas Fiscais (NFP) v12</title>
     <!-- Carrega o TailwindCSS para um design limpo -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -39,7 +39,7 @@
 
     <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 m-4">
         <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">
-            Scanner Rápido NFP (v13)
+            Scanner Rápido NFP (v12)
         </h1>
         <p class="text-center text-gray-600 mb-4">
             Aponte para o QR Code (NFC-e) ou Cód. Barras (SAT).
@@ -86,10 +86,11 @@
     </div>
 
     <script>
-        // === INÍCIO DA ALTERAÇÃO V12/V13 ===
+        // === INÍCIO DA ALTERAÇÃO V12 ===
+        // 3. GARANTIA DE CARGA
         // Espera TUDO (polyfill, html5-qrcode) carregar antes de rodar
         window.addEventListener('load', (event) => {
-        // === FIM DA ALTERAÇÃO V12/V13 ===
+        // === FIM DA ALTERAÇÃO V12 ===
         
             // Elementos da UI
             const startButton = document.getElementById('startButton');
@@ -181,22 +182,19 @@
                     Html5QrcodeSupportedFormats.CODE_128,
                     Html5QrcodeSupportedFormats.EAN_13
                 ];
-                
-                // === INÍCIO DA ALTERAÇÃO V13 ===
-                // Pedimos uma resolução maior (720p) para ajudar
-                // na leitura de notas amassadas ou com falhas.
                 const cameraConfig = { 
-                    facingMode: "environment",
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    facingMode: "environment"
                 };
-                // === FIM DA ALTERAÇÃO V13 ===
                 
+                // === INÍCIO DA ALTERAÇÃO V12 ===
+                // 4. A FLAG DE OTIMIZAÇÃO
+                // Diz ao html5-qrcode para usar o motor WASM (o polyfill)
                 const scannerConfig = {
                     fps: 10,
                     formatsToSupport: formatsToSupport,
-                    useBarCodeDetectorIfSupported: true // <-- A MÁGICA da V12
+                    useBarCodeDetectorIfSupported: true // <-- A MÁGICA
                 };
+                // === FIM DA ALTERAÇÃO V12 ===
                 
                 
                 // O fluxo de 1 clique
