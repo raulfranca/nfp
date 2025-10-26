@@ -3,26 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Notas Fiscais (NFP) v11</title>
+    <title>Scanner de Notas Fiscais (NFP) v12</title>
     <!-- Carrega o TailwindCSS para um design limpo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carrega a biblioteca de leitura de QR Code -->
+    
+    <!-- === INÍCIO DA ALTERAÇÃO V12 === -->
+    
+    <!-- 1. O MOTOR WASM (A "Inspiração" do georapbox) -->
+    <!-- Carrega o polyfill ANTES de tudo. Ele cria o 'window.BarcodeDetector'. -->
+    <script src="https://cdn.jsdelivr.net/npm/barcode-detector-polyfill@2.1.1/dist/barcode-detector-polyfill.min.js"></script>
+    
+    <!-- 2. A BIBLIOTECA DE CONTROLE -->
+    <!-- Carrega nossa biblioteca de scanner de sempre -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    
+    <!-- === FIM DA ALTERAÇÃO V12 === -->
+    
     <style>
-        /* Ajuste para o leitor de QR code se adaptar ao contêiner */
         #reader {
             width: 100%;
             border-radius: 8px;
             overflow: hidden;
             position: relative;
-            cursor: pointer; /* Indica que é clicável para focar */
-            background: #2d3748; /* Fundo escuro para a área da câmera */
+            cursor: pointer; 
+            background: #2d3748; 
         }
-        /* Caixa de mira para facilitar o foco */
         #reader video {
             width: 100% !important;
             height: auto !important;
-            /* Garante que o vídeo não fique distorcido */
             object-fit: cover; 
         }
     </style>
@@ -31,7 +39,7 @@
 
     <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 m-4">
         <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">
-            Scanner Rápido NFP (v11)
+            Scanner Rápido NFP (v12)
         </h1>
         <p class="text-center text-gray-600 mb-4">
             Aponte para o QR Code (NFC-e) ou Cód. Barras (SAT).
@@ -78,9 +86,12 @@
     </div>
 
     <script>
-        // === INÍCIO DA ALTERAÇÃO V11 ===
-        // 1. Espera o DOM carregar (mais rápido que 'window.onload')
-        document.addEventListener('DOMContentLoaded', (event) => {
+        // === INÍCIO DA ALTERAÇÃO V12 ===
+        // 3. GARANTIA DE CARGA
+        // Espera TUDO (polyfill, html5-qrcode) carregar antes de rodar
+        window.addEventListener('load', (event) => {
+        // === FIM DA ALTERAÇÃO V12 ===
+        
             // Elementos da UI
             const startButton = document.getElementById('startButton');
             const stopButton = document.getElementById('stopButton');
@@ -120,7 +131,6 @@
 
             let html5QrCode;
             try {
-                // 2. Inicializa a biblioteca (assumindo que já carregou)
                 html5QrCode = new Html5Qrcode("reader");
             } catch (e) {
                 statusDiv.innerText = 'Erro ao carregar a biblioteca do scanner.';
@@ -175,10 +185,17 @@
                 const cameraConfig = { 
                     facingMode: "environment"
                 };
+                
+                // === INÍCIO DA ALTERAÇÃO V12 ===
+                // 4. A FLAG DE OTIMIZAÇÃO
+                // Diz ao html5-qrcode para usar o motor WASM (o polyfill)
                 const scannerConfig = {
                     fps: 10,
-                    formatsToSupport: formatsToSupport
+                    formatsToSupport: formatsToSupport,
+                    useBarCodeDetectorIfSupported: true // <-- A MÁGICA
                 };
+                // === FIM DA ALTERAÇÃO V12 ===
+                
                 
                 // O fluxo de 1 clique
                 try {
@@ -204,9 +221,6 @@
                             console.error("Erro ao configurar o tap-to-focus:", e);
                         }
                     }).catch(err => {
-                        // 3. RELATÓRIO DE ERRO REAL
-                        // Se a permissão for negada ou o 'Preview' bloquear,
-                        // o erro real será mostrado aqui.
                         statusDiv.innerText = `Erro: ${err}`;
                         statusDiv.classList.remove('text-blue-700');
                         statusDiv.classList.add('text-red-600', 'font-bold');
@@ -284,8 +298,7 @@
                 statusDiv.innerText = 'Lista limpa. Pronto para escanear.';
             });
         
-        }); // <-- Fim do DOMContentLoaded
-        // === FIM DA ALTERAÇÃO V11 ===
+        }); // <-- Fim do window.addEventListener('load')
     </script>
 </body>
 </html>
